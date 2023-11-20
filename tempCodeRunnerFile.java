@@ -1,1 +1,0 @@
-String mode = "r".equals(permission) ? "r" : "rw";
