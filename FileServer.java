@@ -55,17 +55,24 @@ class ClientHandler extends Thread {
 
                 switch (command) {
                     case "OPEN":
+                        if (commands[2] == null) {
+                            out.println("Error: Missing permission for OPEN command");
+                            break;
+                        }
                         handleOpen(commands[1], commands[2]);
                         break;
                     case "WRITE":
                         if (commands.length > 1) {
                             String fileName = commands[1];
-                            StringBuilder fileDataBuilder = new StringBuilder();
-                            while (!(inputLine = in.readLine()).equals("<END_OF_DATA>")) {
-                                fileDataBuilder.append(inputLine).append("\n");
-                            }
-                            String fileData = fileDataBuilder.toString();
-                            System.out.println(fileData); // Debugging
+
+                            // Read the length of the data
+                            int length = Integer.parseInt(in.readLine());
+
+                            // Read the actual file data
+                            char[] buffer = new char[length];
+                            int bytesRead = in.read(buffer, 0, length);
+                            String fileData = new String(buffer, 0, bytesRead);
+
                             handleWrite(fileName, fileData);
                         } else {
                             out.println("Error: Missing file name for WRITE command");
@@ -110,7 +117,7 @@ class ClientHandler extends Thread {
         buffer.flush();
         String fileContent = buffer.toString();
         out.println(fileContent);
-        out.println("File opened with " + permission + " permission: " + fileName);
+        out.println("Opened " + fileName + " with " + permission + " permission");
     }
 
     private void handleWrite(String fileName, String fileData) {
@@ -119,6 +126,7 @@ class ClientHandler extends Thread {
             try {
                 file.setLength(0); // Clear the file before writing
                 file.write(fileData.getBytes());
+                System.out.println(fileName + " Updated.");
                 out.println("Data written to file: " + fileName);
             } catch (IOException e) {
                 out.println("Error writing to file: " + e.getMessage());
