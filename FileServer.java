@@ -19,10 +19,8 @@ public class FileServer {
       }
     }
 
-    // 以下にクライアントハンドラーの実装を記述
-
     public static void main(String[] args) throws IOException {
-      int port = 6666; // 例として8080ポートを使用
+      int port = 6666;
       FileServer server = new FileServer(port);
       System.out.println("Server started on port " + port);
       server.start();
@@ -30,7 +28,6 @@ public class FileServer {
 }
 
 // ここにClientHandlerクラスを実装
-
 class ClientHandler extends Thread {
     private Socket clientSocket;
     private PrintWriter out;
@@ -53,12 +50,26 @@ class ClientHandler extends Thread {
 
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
-                String[] commands = inputLine.split(" ");
+                String[] commands = inputLine.split(" ", 3);
                 String command = commands[0];
 
                 switch (command) {
                     case "OPEN":
                         handleOpen(commands[1], commands[2]);
+                        break;
+                    case "WRITE":
+                        if (commands.length > 1) {
+                            String fileName = commands[1];
+                            StringBuilder fileDataBuilder = new StringBuilder();
+                            while (!(inputLine = in.readLine()).equals("<END_OF_DATA>")) {
+                                fileDataBuilder.append(inputLine).append("\n");
+                            }
+                            String fileData = fileDataBuilder.toString();
+                            System.out.println(fileData); // Debugging
+                            handleWrite(fileName, fileData);
+                        } else {
+                            out.println("Error: Missing file name for WRITE command");
+                        }
                         break;
                     case "CLOSE":
                         handleClose(commands[1]);
@@ -80,7 +91,7 @@ class ClientHandler extends Thread {
     private void handleOpen(String fileName, String permission) throws IOException {
         if ("w".equals(permission) || "rw".equals(permission)) {
             if (!lockManager.tryLock(fileName)) {
-                out.println("Write access denied: File is currently open with write permission");
+                out.println("Write access denied: File is currently open with write permission by other user");
                 return;
             }
         }
@@ -100,6 +111,21 @@ class ClientHandler extends Thread {
         String fileContent = buffer.toString();
         out.println(fileContent);
         out.println("File opened with " + permission + " permission: " + fileName);
+    }
+
+    private void handleWrite(String fileName, String fileData) {
+        RandomAccessFile file = openFiles.get(fileName);
+        if (file != null) {
+            try {
+                file.setLength(0); // Clear the file before writing
+                file.write(fileData.getBytes());
+                out.println("Data written to file: " + fileName);
+            } catch (IOException e) {
+                out.println("Error writing to file: " + e.getMessage());
+            }
+        } else {
+            out.println("File not open");
+        }
     }
 
     private void handleClose(String fileName) throws IOException {

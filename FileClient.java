@@ -40,52 +40,40 @@ public class FileClient {
         return response.toString();
     }
 
+    public void openFile(String fileName, String permission) throws IOException {
+        sendRequest("OPEN " + fileName + " " + permission);
+        String response = getResponse();
+
+        int confirmationIndex = response.lastIndexOf("\nFile opened with");
+        if (confirmationIndex != -1) {
+            String fileContent = response.substring(0, confirmationIndex);
+            String confirmationMessage = response.substring(confirmationIndex + 1).trim();
+
+            fileData.put(fileName, fileContent);
+            filePermissions.put(fileName, permission);
     
-  
-  public void openFile(String fileName, String permission) throws IOException {
-      System.out.println("Attempting to open file: " + fileName + " with permission: " + permission);
-      sendRequest("OPEN " + fileName + " " + permission);
-      String response = getResponse();
-
-      System.out.println("Full server response: \n" + response); // Debugging
-
-      int confirmationIndex = response.lastIndexOf("\nFile opened with");
-      if (confirmationIndex != -1) {
-          String fileContent = response.substring(0, confirmationIndex);
-          String confirmationMessage = response.substring(confirmationIndex + 1).trim();
-
-          System.out.println("Parsed file content: \n" + fileContent); // Debugging
-          System.out.println("Parsed confirmation message: " + confirmationMessage); // Debugging
-
-          fileData.put(fileName, fileContent);
-
-          if (confirmationMessage.startsWith("File opened with")) {
-              filePermissions.put(fileName, permission);
-              System.out.println("Stored permission for " + fileName + ": " + permission); // Debugging
-          } else {
-              System.out.println("Unexpected response format for file opening.");
-          }
-      } else {
-          System.out.println("Unable to parse server response.");
-      }
-  }
+            System.out.println(confirmationMessage + "\n");
+        } else {
+            System.out.println("Unable to parse server response.");
+        }
+    }
 
     public void readFile(String fileName) {
-        System.out.println("Attempting to read file: " + fileName);
         String permission = filePermissions.get(fileName);
-        System.out.println("Current permission for " + fileName + ": " + permission); // Debugging
 
         if ("r".equals(permission) || "rw".equals(permission)) {
             String data = fileData.get(fileName);
             System.out.println("File data: \n" + data);
         } else {
-            System.out.println("Read permission denied for file: " + fileName);
+            System.out.println("Read permission denied for file: " + fileName + "\n");
         }    
     }
 
     public void writeFile(String fileName, String newData) {
         if ("w".equals(filePermissions.get(fileName)) || "rw".equals(filePermissions.get(fileName))) {
-            fileData.put(fileName, newData);
+            String currentData = fileData.getOrDefault(fileName, "");
+            currentData += "\n" + newData;
+            fileData.put(fileName, currentData);
         } else {
             System.out.println("Write permission denied for file: " + fileName);
         }
@@ -94,7 +82,9 @@ public class FileClient {
     public void closeFile(String fileName) throws IOException {
         if (filePermissions.containsKey(fileName)) {
             if ("w".equals(filePermissions.get(fileName)) || "rw".equals(filePermissions.get(fileName))) {
-                sendRequest("WRITE " + fileName + " " + fileData.get(fileName));
+                String content = fileData.get(fileName);
+                content += "<END_OF_DATA>";
+                sendRequest("WRITE " + fileName + " " + content);
                 System.out.println(getResponse());
             }
             sendRequest("CLOSE " + fileName);
@@ -130,6 +120,7 @@ public class FileClient {
                 String command = commandParts[0];
                 String fileName = commandParts.length > 1 ? commandParts[1] : null;
 
+                System.out.println();
                 switch (command.toUpperCase()) {
                     case "OPEN":
                         String permission = commandParts.length > 2 ? commandParts[2] : null;
