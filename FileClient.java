@@ -44,7 +44,7 @@ public class FileClient {
         sendRequest("OPEN " + fileName + " " + permission);
         String response = getResponse();
 
-        int confirmationIndex = response.lastIndexOf("\nFile opened with");
+        int confirmationIndex = response.lastIndexOf("\nOpened");
         if (confirmationIndex != -1) {
             String fileContent = response.substring(0, confirmationIndex);
             String confirmationMessage = response.substring(confirmationIndex + 1).trim();
@@ -52,10 +52,15 @@ public class FileClient {
             fileData.put(fileName, fileContent);
             filePermissions.put(fileName, permission);
     
-            System.out.println(confirmationMessage + "\n");
-        } else {
+            System.out.println(confirmationMessage);
+        } 
+        else if (response.lastIndexOf("Write access denied") != -1) {
+            System.out.print(response);
+        }
+        else {
             System.out.println("Unable to parse server response.");
         }
+        System.out.println();
     }
 
     public void readFile(String fileName) {
@@ -63,7 +68,7 @@ public class FileClient {
 
         if ("r".equals(permission) || "rw".equals(permission)) {
             String data = fileData.get(fileName);
-            System.out.println("File data: \n" + data);
+            System.out.println(data + "\n");
         } else {
             System.out.println("Read permission denied for file: " + fileName + "\n");
         }    
@@ -71,11 +76,15 @@ public class FileClient {
 
     public void writeFile(String fileName, String newData) {
         if ("w".equals(filePermissions.get(fileName)) || "rw".equals(filePermissions.get(fileName))) {
+            if (newData == null) {
+                System.out.println("No new data provided. Nothing to write.\n");
+                return;
+            }
             String currentData = fileData.getOrDefault(fileName, "");
             currentData += "\n" + newData;
             fileData.put(fileName, currentData);
         } else {
-            System.out.println("Write permission denied for file: " + fileName);
+            System.out.println("Write permission denied for file: " + fileName + "\n");
         }
     }
 
@@ -83,16 +92,16 @@ public class FileClient {
         if (filePermissions.containsKey(fileName)) {
             if ("w".equals(filePermissions.get(fileName)) || "rw".equals(filePermissions.get(fileName))) {
                 String content = fileData.get(fileName);
-                content += "<END_OF_DATA>";
-                sendRequest("WRITE " + fileName + " " + content);
-                System.out.println(getResponse());
+                out.println("WRITE " + fileName);
+                out.println(content.length());
+                out.println(content);
             }
             sendRequest("CLOSE " + fileName);
             System.out.println(getResponse());
             fileData.remove(fileName);
             filePermissions.remove(fileName);
         } else {
-            System.out.println("File not open: " + fileName);
+            System.out.println("File not open: " + fileName + "\n");
         }
     }
 
