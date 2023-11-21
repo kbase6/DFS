@@ -1,110 +1,112 @@
 import java.net.*;
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
-public class FileServer {
+public class FileServer implements AutoCloseable {
     private ServerSocket serverSocket;
+    private ExecutorService executorService;
     private LockManager lockManager;
 
     public FileServer(int port) throws IOException {
-      serverSocket = new ServerSocket(port);
-      lockManager = new LockManager();
+        serverSocket = new ServerSocket(port);
+        executorService = Executors.newCachedThreadPool();
+        lockManager = new LockManager();
     }
 
-    public void start() throws IOException {
-      while (true) {
-        Socket clientSocket = serverSocket.accept();
-        new ClientHandler(clientSocket, lockManager).start();
-      }
-    }
-
-    public static void main(String[] args) throws IOException {
-      int port = 6666;
-      FileServer server = new FileServer(port);
-      System.out.println("Server started on port " + port);
-      server.start();
-    }
-}
-
-// ここにClientHandlerクラスを実装
-class ClientHandler extends Thread {
-    private Socket clientSocket;
-    private PrintWriter out;
-    private BufferedReader in;
-    private Map<String, RandomAccessFile> openFiles;
-    private Map<String, String> filePermissions;
-    private LockManager lockManager;
-
-    public ClientHandler(Socket socket, LockManager lockManager) {
-        this.clientSocket = socket;
-        this.openFiles = new HashMap<>();
-        this.filePermissions = new HashMap<>();
-        this.lockManager = lockManager;
-    }
-
-    public void run() {
+    public void start() {
         try {
-            out = new PrintWriter(clientSocket.getOutputStream(), true);
-            in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-
-            String inputLine;
-            while ((inputLine = in.readLine()) != null) {
-                String[] commands = inputLine.split(" ", 3);
-                String command = commands[0];
-
-                switch (command) {
-                    case "OPEN":
-                        if (commands[2] == null) {
-                            out.println("Error: Missing permission for OPEN command");
-                            break;
-                        }
-                        handleOpen(commands[1], commands[2]);
-                        break;
-                    case "WRITE":
-                        if (commands.length > 1) {
-                            String fileName = commands[1];
-
-                            // Read the length of the data
-                            int length = Integer.parseInt(in.readLine());
-
-                            // Read the actual file data
-                            char[] buffer = new char[length];
-                            int bytesRead = in.read(buffer, 0, length);
-                            String fileData = new String(buffer, 0, bytesRead);
-
-                            handleWrite(fileName, fileData);
-                        } else {
-                            out.println("Error: Missing file name for WRITE command");
-                        }
-                        break;
-                    case "CLOSE":
-                        handleClose(commands[1]);
-                        break;
-                    default:
-                        out.println("Invalid Command");
-                        break;
-                }
+            while (!serverSocket.isClosed()) {
+                Socket clientSocket = serverSocket.accept();
+                executorService.submit(new ClientHandler(clientSocket, lockManager));
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            executorService.shutdown();
+        }
+    }
 
-            in.close();
-            out.close();
-            clientSocket.close();
+    public static void main(String[] args) {
+        int port = 6666;
+        try (FileServer server = new FileServer(port)) {
+            System.out.println("Server started on port " + port);
+            server.start();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void handleOpen(String fileName, String permission) throws IOException {
+    @Override
+    public void close() throws IOException {
+        if (serverSocket != null && !serverSocket.isClosed()) {
+            serverSocket.close();
+        }
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdown();
+        }
+    }
+}
+
+class ClientHandler implements Runnable {
+    private Socket clientSocket;
+    private PrintWriter out;
+    private BufferedReader in;
+    private Map<String, RandomAccessFile> openFiles;
+    private LockManager lockManager;
+
+    public ClientHandler(Socket socket, LockManager lockManager) {
+        this.clientSocket = socket;
+        this.openFiles = new ConcurrentHashMap<>();
+        this.lockManager = lockManager;
+    }
+
+    @Override
+    public void run() {
+        try {
+            out = new PrintWriter(clientSocket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        
+            String inputLine;
+            System.out.println("Ready to accept commands.");
+            while ((inputLine = in.readLine()) != null) {
+                String[] commands = inputLine.split(" ", 3);
+                String command = commands[0];
+                
+                switch (command) {
+                    case "OPEN":
+                        handleOpen(commands);
+                        break;
+                    case "WRITE":
+                        handleWrite(commands);
+                        break;
+                    case "CLOSE":
+                        handleClose(commands);
+                        break;
+                    default:
+                        out.println("Invalid command");
+                        break;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            closeResources();
+        }
+    }
+
+    private void handleOpen(String[] commands) throws IOException {
+        String fileName = commands[1];
+        String permission = commands[2] != null ? commands[2] : "r";
+
         if ("w".equals(permission) || "rw".equals(permission)) {
             if (!lockManager.tryLock(fileName)) {
                 out.println("Write access denied: File is currently open with write permission by other user");
                 return;
             }
         }
-
-        String mode = "r".equals(permission) ? "r" : "rw";
-        RandomAccessFile file = new RandomAccessFile(fileName, mode);
+        System.out.println("Request: " + commands[0] + " " + fileName + " " + permission); // Debugging
+        RandomAccessFile file = new RandomAccessFile(fileName, permission);
         openFiles.put(fileName, file);
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] data = new byte[1024];
@@ -115,37 +117,68 @@ class ClientHandler extends Thread {
         }
 
         buffer.flush();
-        String fileContent = buffer.toString();
-        out.println(fileContent);
-        out.println("Opened " + fileName + " with " + permission + " permission");
+        String fileData = buffer.toString();
+        out.println(fileData);
+        out.println("END_OF_DATA");
+        System.out.println("DONE");
     }
 
-    private void handleWrite(String fileName, String fileData) {
+    private void handleWrite(String[] commands) throws IOException {
+        String fileName = commands[1];
+
+        StringBuilder fileContent = new StringBuilder();
+        String line;
+        while (!(line = in.readLine()).equals("END_OF_DATA")) {
+            fileContent.append(line).append("\n");
+        }
+
+        // Remove the last newline character added
+        if (fileContent.length() > 0) {
+            fileContent.deleteCharAt(fileContent.length() - 1);
+        }
+
+        String fileData = fileContent.toString();
+
         RandomAccessFile file = openFiles.get(fileName);
+        
+        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
         if (file != null) {
             try {
-                file.setLength(0); // Clear the file before writing
+                file.setLength(0); // Clear file before writing
                 file.write(fileData.getBytes());
-                System.out.println(fileName + " Updated.");
                 out.println("Data written to file: " + fileName);
+                System.out.println(fileName + " updated.");
             } catch (IOException e) {
                 out.println("Error writing to file: " + e.getMessage());
             }
         } else {
             out.println("File not open");
         }
+        System.out.println("DONE");
     }
 
-    private void handleClose(String fileName) throws IOException {
+    private void handleClose(String[] commands) throws IOException {
+        String fileName = commands[1];
+        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
         RandomAccessFile file = openFiles.get(fileName);
         if (file != null) {
             file.close();
             openFiles.remove(fileName);
-            filePermissions.remove(fileName);
             lockManager.unlock(fileName);
             out.println("File closed: " + fileName);
         } else {
             out.println("File not open");
+        }
+        System.out.println("DONE");
+    }
+
+    private void closeResources() {
+        try {
+            if (in != null) in.close();
+            if (out != null) out.close();
+            if (clientSocket != null) clientSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
@@ -159,9 +192,5 @@ class LockManager {
 
     public synchronized void unlock(String fileName) {
         lockedFiles.remove(fileName);
-    }
-
-    public boolean isLocked(String fileName) {
-        return lockedFiles.contains(fileName);
     }
 }
