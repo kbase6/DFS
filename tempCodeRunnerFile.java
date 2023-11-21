@@ -1,1 +1,0 @@
-String permission = commands[2];
