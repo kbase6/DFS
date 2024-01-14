@@ -3,12 +3,12 @@ import java.io.*;
 import java.util.*;
 import java.util.concurrent.*;
 
-public class FileServer implements AutoCloseable {
+public class FileServerB implements AutoCloseable {
     private ServerSocket serverSocket;
     private ExecutorService executorService;
     private LockManager lockManager;
 
-    public FileServer(int port) throws IOException {
+    public FileServerB(int port) throws IOException {
         serverSocket = new ServerSocket(port);
         executorService = Executors.newCachedThreadPool();
         lockManager = new LockManager();
@@ -28,8 +28,8 @@ public class FileServer implements AutoCloseable {
     }
 
     public static void main(String[] args) {
-        int port = 6666;
-        try (FileServer server = new FileServer(port)) {
+        int port = 6667;
+        try (FileServerB server = new FileServerB(port)) {
             System.out.println("Server started on port " + port);
             server.start();
         } catch (IOException e) {

@@ -2,6 +2,11 @@ import java.net.*;
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.stream.Stream;
 
 public class FileClient {
     private Socket socket;
@@ -9,17 +14,34 @@ public class FileClient {
     private BufferedReader in;
     private Map<String, String> fileData; // Stores the data of the files
     private Map<String, String> filePermissions; // Stores the permissions of the files
+    private List<Socket> connections;
 
     public FileClient() {
         this.fileData = new HashMap<>();
         this.filePermissions = new HashMap<>();
+        connections = new ArrayList<>();
     }
 
-    public void startConnection(String ip, int port) {
+    public void connectToServers(String fileName) {
+	    try (Stream<String> stream = Files.lines(Paths.get(fileName))) {
+		    stream.forEach(line -> {
+			    String[] parts = line.split(" ");
+			    if (parts.length == 2) {
+				    startConnection("127.0.0.1", Integer.parseInt(parts[0]), parts[1]);
+			    }
+		    });
+	    } catch (IOException e) {
+		    System.out.println("Error reading server list from file");
+		    e.printStackTrace();
+	    }
+    }
+
+    public void startConnection(String ip, int port, String serverName) {
         try {
-            socket = new Socket(ip, port);
-            out = new PrintWriter(socket.getOutputStream(), true);
+            Socket socket = new Socket(ip, port);
+	    connections.add(socket);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            System.out.println("Successfully started connection with server: " + serverName);
         } catch (IOException e) {
             System.out.println("Error starting connection: " + e.getMessage());
         }
@@ -43,7 +65,7 @@ public class FileClient {
         try {
             return in.readLine();
         } catch (IOException e) {
-            System.out.println("Error getting response: " + e.getMessage());
+            System.out.println("Error getting response from server: " + e.getMessage());
             return null;
         }
     }
@@ -129,12 +151,31 @@ public class FileClient {
         filePermissions.remove(fileName);
     }
 
+    public parseFilePath(String filePath) {
+	if (filePath.startsWith("/") {
+		filePath = filePath.substring[1];
+	}
+
+	String[] parts = filePath.split("/");
+	serverName = parts[0];
+	fileName = parts[parts.length - 1];
+
+	if (parts.length > 2) {
+		folders = new String[parts.length - 2];
+		System.arraycopy(parts, 1, folder, 0, parts.length - 2);
+	} else {
+		folders = new String[0];
+	}
+	return serverName, fileName, folders;
+    }
+		
+
     public static void main(String[] args) throws IOException {
         FileClient client = new FileClient();
-        client.startConnection("127.0.0.1", 6666);
+	client.connectToServers("serverList.txt");
 
         try (BufferedReader consoleReader = new BufferedReader(new InputStreamReader(System.in))) {
-            System.out.println("Enter command (or type 'exit' to quit): ");
+            System.out.println("Enter command (or type 'exit' to quit):");
             while (true) {
                 System.out.print("cmd > ");
                 String userInput = consoleReader.readLine();
@@ -146,7 +187,7 @@ public class FileClient {
                 handleUserInput(userInput, client);
             }
         } catch (IOException e) {
-            System.out.println("Error occured while reading user input: " + e.getMessage());
+            System.out.println("Error occurred while reading user input: " + e.getMessage());
         } finally {
             client.stopConnection();
         }
@@ -160,7 +201,7 @@ public class FileClient {
         }
 
         String command = commandParts[0];
-        String fileName = commandParts.length > 1 ? commandParts[1] : null;
+	String serverName, fileName, folders = parseFilePath(commandParts[1]);
 
         switch (command.toUpperCase()) {
             case "OPEN":
