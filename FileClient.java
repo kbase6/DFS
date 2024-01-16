@@ -22,10 +22,10 @@ public class FileClient {
     }
 
     public FileClient() {
-        connections = new HashMap<>();
+        connections = new HashMap<>(); // store port number and sockets
         serverPortMap = new HashMap<>(); // Initialize the server-port map
-        this.fileData = new HashMap<>();
-        this.filePermissions = new HashMap<>();
+        this.fileData = new HashMap<>(); // store file data
+        this.filePermissions = new HashMap<>(); // store permission for each file
     }
 
     public void connectToServers(String serverListFilePath) {
@@ -37,7 +37,6 @@ public class FileClient {
                     String serverName = parts[1];
                     int port = Integer.parseInt(parts[0]);
                     String ip = "127.0.0.1";
-                    System.out.println(serverName + " " + port);
                     serverPortMap.put(serverName, port); // Store server and port information
                     startConnection(ip, port, serverName);
                 }
@@ -148,7 +147,7 @@ public class FileClient {
             System.out.println("Read permission denied for file: " + fileName);
         }
     }
-    
+
     public void writeFile(int port, String fileName, String newData) {
         String permission = filePermissions.get(fileName);
         if (!"w".equals(permission) && !"rw".equals(permission)) {
@@ -177,8 +176,6 @@ public class FileClient {
             sendRequest(port, "END_OF_DATA");
             System.out.println(getResponse(port));
         }
-        sendRequest(port, "CLOSE " + fileName);
-        System.out.println(getResponse(port));
         fileData.remove(fileName);
         filePermissions.remove(fileName);
     }
@@ -248,7 +245,7 @@ public class FileClient {
 
         switch (command.toUpperCase()) {
             case "OPEN":
-                String permission = commandParts.length > 2 ? commandParts[2] : null;
+                String permission = commandParts.length > 2 ? commandParts[2] : "r";
                 client.openFile(port, fileName, permission);
                 break;
             case "READ":
