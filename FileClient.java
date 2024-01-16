@@ -147,7 +147,7 @@ public class FileClient {
             System.out.println("Read permission denied for file: " + fileName);
         }
     }
-    
+
     public void writeFile(int port, String fileName, String newData) {
         String permission = filePermissions.get(fileName);
         if (!"w".equals(permission) && !"rw".equals(permission)) {
@@ -176,8 +176,6 @@ public class FileClient {
             sendRequest(port, "END_OF_DATA");
             System.out.println(getResponse(port));
         }
-        sendRequest(port, "CLOSE " + fileName);
-        System.out.println(getResponse(port));
         fileData.remove(fileName);
         filePermissions.remove(fileName);
     }

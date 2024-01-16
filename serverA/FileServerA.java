@@ -52,12 +52,10 @@ class ClientHandler implements Runnable {
     private Socket clientSocket;
     private PrintWriter out;
     private BufferedReader in;
-    private Map<String, RandomAccessFile> openFiles;
     private LockManager lockManager;
 
     public ClientHandler(Socket socket, LockManager lockManager) {
         this.clientSocket = socket;
-        this.openFiles = new ConcurrentHashMap<>();
         this.lockManager = lockManager;
     }
 
@@ -80,9 +78,6 @@ class ClientHandler implements Runnable {
                     case "WRITE":
                         handleWrite(commands);
                         break;
-                    case "CLOSE":
-                        handleClose(commands);
-                        break;
                     default:
                         out.println("Invalid command");
                         break;
@@ -97,7 +92,7 @@ class ClientHandler implements Runnable {
 
     private void handleOpen(String[] commands) throws IOException {
         String fileName = commands[1];
-        String permission = commands[2] != null ? commands[2] : "r";
+        String permission = commands[2];
 
         if ("w".equals(permission) || "rw".equals(permission)) {
             if (!lockManager.tryLock(fileName)) {
@@ -107,7 +102,7 @@ class ClientHandler implements Runnable {
         }
         System.out.println("Request: " + commands[0] + " " + fileName + " " + permission); // Debugging
         RandomAccessFile file = new RandomAccessFile(fileName, permission);
-        openFiles.put(fileName, file);
+        // openFiles.put(fileName, file); // delete
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] data = new byte[1024];
         int bytesRead;
@@ -121,10 +116,12 @@ class ClientHandler implements Runnable {
         out.println(fileData);
         out.println("END_OF_DATA");
         System.out.println("DONE");
+        file.close();
     }
 
     private void handleWrite(String[] commands) throws IOException {
         String fileName = commands[1];
+        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
 
         StringBuilder fileContent = new StringBuilder();
         String line;
@@ -139,37 +136,19 @@ class ClientHandler implements Runnable {
 
         String fileData = fileContent.toString();
 
-        RandomAccessFile file = openFiles.get(fileName);
-        
-        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
-        if (file != null) {
-            try {
-                file.setLength(0); // Clear file before writing
-                file.write(fileData.getBytes());
-                out.println("Data written to file: " + fileName);
-                System.out.println(fileName + " updated.");
-            } catch (IOException e) {
-                out.println("Error writing to file: " + e.getMessage());
-            }
-        } else {
-            out.println("File not open");
-        }
-        System.out.println("DONE");
-    }
+        RandomAccessFile file = new RandomAccessFile(fileName, "rw");
 
-    private void handleClose(String[] commands) throws IOException {
-        String fileName = commands[1];
-        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
-        RandomAccessFile file = openFiles.get(fileName);
-        if (file != null) {
-            file.close();
-            openFiles.remove(fileName);
-            lockManager.unlock(fileName);
-            out.println("File closed: " + fileName);
-        } else {
-            out.println("File not open");
+        System.out.println("File opened. Updating file.");
+        try {
+            file.setLength(0); // Clear file before writing
+            file.write(fileData.getBytes());
+            out.println("Data written to file: " + fileName);
+            System.out.println(fileName + " updated.");
+        } catch (IOException e) {
+            out.println("Error writing to file: " + e.getMessage());
         }
         System.out.println("DONE");
+        file.close();
     }
 
     private void closeResources() {
