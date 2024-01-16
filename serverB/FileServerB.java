@@ -1,7 +1,15 @@
-import java.net.*;
-import java.io.*;
-import java.util.*;
-import java.util.concurrent.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.io.RandomAccessFile;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class FileServerB implements AutoCloseable {
     private ServerSocket serverSocket;
@@ -64,13 +72,13 @@ class ClientHandler implements Runnable {
         try {
             out = new PrintWriter(clientSocket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-        
+
             String inputLine;
             System.out.println("Ready to accept commands.");
             while ((inputLine = in.readLine()) != null) {
                 String[] commands = inputLine.split(" ", 3);
                 String command = commands[0];
-                
+
                 switch (command) {
                     case "OPEN":
                         handleOpen(commands);
@@ -120,40 +128,39 @@ class ClientHandler implements Runnable {
 
     private void handleWrite(String[] commands) throws IOException {
         String fileName = commands[1];
+        int filePointer = Integer.parseInt(commands[2]);
 
         StringBuilder fileContent = new StringBuilder();
         String line;
         while (!(line = in.readLine()).equals("END_OF_DATA")) {
             fileContent.append(line).append("\n");
         }
-
-        // Remove the last newline character added
         if (fileContent.length() > 0) {
             fileContent.deleteCharAt(fileContent.length() - 1);
         }
-
-        String fileData = fileContent.toString();
+        String newContent = fileContent.toString();
 
         RandomAccessFile file = new RandomAccessFile(fileName, "rw");
-        
-        System.out.println("Request: " + commands[0] + " " + fileName); // Debugging
         try {
-            file.setLength(0); // Clear file before writing
-            file.write(fileData.getBytes());
-            out.println("Data written to file: " + fileName);
-            System.out.println(fileName + " updated.");
+            file.seek(filePointer); // 指定されたポインタに移動
+            file.write(newContent.getBytes()); // 新しい内容を書き込み
+            file.setLength(filePointer + newContent.length()); // ファイルの長さを調整
+            out.println("Data written to file: " + fileName + " at position " + filePointer);
         } catch (IOException e) {
             out.println("Error writing to file: " + e.getMessage());
+        } finally {
+            file.close();
         }
-        System.out.println("DONE");
-        file.close();
     }
 
     private void closeResources() {
         try {
-            if (in != null) in.close();
-            if (out != null) out.close();
-            if (clientSocket != null) clientSocket.close();
+            if (in != null)
+                in.close();
+            if (out != null)
+                out.close();
+            if (clientSocket != null)
+                clientSocket.close();
         } catch (IOException e) {
             e.printStackTrace();
         }

@@ -1,5 +1,10 @@
-import java.net.*;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -8,7 +13,8 @@ public class FileClient {
     private Map<String, String> fileData;
     private Map<String, String> filePermissions;
     private Map<Integer, ConnectionResources> connections;
-    private Map<String, Integer> serverPortMap; 
+    private Map<String, Integer> serverPortMap;
+
     private class ConnectionResources {
         Socket socket;
         PrintWriter out;
@@ -26,6 +32,7 @@ public class FileClient {
         serverPortMap = new HashMap<>(); // Initialize the server-port map
         this.fileData = new HashMap<>(); // store file data
         this.filePermissions = new HashMap<>(); // store permission for each file
+        System.out.println("Server started on ");
     }
 
     public void connectToServers(String serverListFilePath) {
@@ -63,9 +70,12 @@ public class FileClient {
             ConnectionResources resources = connections.get(port);
             if (resources != null) {
                 try {
-                    if (resources.in != null) resources.in.close();
-                    if (resources.out != null) resources.out.close();
-                    if (resources.socket != null) resources.socket.close();
+                    if (resources.in != null)
+                        resources.in.close();
+                    if (resources.out != null)
+                        resources.out.close();
+                    if (resources.socket != null)
+                        resources.socket.close();
                     connections.remove(port);
                 } catch (IOException e) {
                     System.out.println("Error stopping connection on port " + port + ": " + e.getMessage());
@@ -103,7 +113,7 @@ public class FileClient {
             System.out.println("No active connection on port " + port);
             return;
         }
-    
+
         StringBuilder response = new StringBuilder();
         try {
             String line;
@@ -124,7 +134,7 @@ public class FileClient {
             System.out.println("Error getting response: " + e.getMessage());
         }
     }
-    
+
     public void openFile(int port, String fileName, String permission) {
         if (fileName == null) {
             System.out.println("Filename not provided");
@@ -133,7 +143,7 @@ public class FileClient {
         sendRequest(port, "OPEN " + fileName + " " + permission);
         handleFileTransfer(port, fileName, permission);
     }
-    
+
     public void readFile(int port, String fileName) {
         if (!filePermissions.containsKey(fileName) || !fileData.containsKey(fileName)) {
             System.out.println("File not open or not found: " + fileName);
@@ -148,21 +158,23 @@ public class FileClient {
         }
     }
 
-    public void writeFile(int port, String fileName, String newData) {
-        String permission = filePermissions.get(fileName);
-        if (!"w".equals(permission) && !"rw".equals(permission)) {
+    public void writeFile(int port, String fileName, int filePointer, String newData) {
+        if (!filePermissions.containsKey(fileName) || !"rw".equals(filePermissions.get(fileName))) {
             System.out.println("Write permission denied for file: " + fileName);
             return;
         }
+
         if (newData == null) {
             System.out.println("No new data provided. Nothing to write.");
             return;
         }
-        String currentData = fileData.getOrDefault(fileName, "");
-        currentData += "\n" + newData;
-        fileData.put(fileName, currentData);
+
+        sendRequest(port, "WRITE " + fileName + " " + filePointer);
+        sendRequest(port, newData);
+        sendRequest(port, "END_OF_DATA");
+        System.out.println(getResponse(port));
     }
-    
+
     public void closeFile(int port, String fileName) {
         if (!filePermissions.containsKey(fileName)) {
             System.out.println("File not open: " + fileName);
@@ -179,7 +191,6 @@ public class FileClient {
         fileData.remove(fileName);
         filePermissions.remove(fileName);
     }
-    
 
     public static String[] parseFilePath(String filePath) {
         String serverName;
@@ -197,7 +208,7 @@ public class FileClient {
             fileName = "";
         }
 
-        return new String[] {serverName, fileName};
+        return new String[] { serverName, fileName };
     }
 
     public static void main(String[] args) throws IOException {
@@ -224,9 +235,8 @@ public class FileClient {
     }
 
     private static void handleUserInput(String userInput, FileClient client) {
-        String[] commandParts = userInput.split(" ", 3);
+        String[] commandParts = userInput.split(" ", 4);
 
-        // must include at least command and file name
         if (commandParts.length < 2) {
             System.out.println("Invalid Command");
             return;
@@ -237,7 +247,7 @@ public class FileClient {
         String serverName = parsedFilePath[0];
         String fileName = parsedFilePath[1];
 
-        Integer port = client.serverPortMap.get(serverName); // Get the port number for the server
+        Integer port = client.serverPortMap.get(serverName);
         if (port == null) {
             System.out.println("Server not found: " + serverName);
             return;
@@ -252,8 +262,17 @@ public class FileClient {
                 client.readFile(port, fileName);
                 break;
             case "WRITE":
-                String newData = commandParts.length > 2 ? commandParts[2] : null;
-                client.writeFile(port, fileName, newData);
+                if (commandParts.length < 4) {
+                    System.out.println("Invalid Command. Usage: WRITE [serverName/filename] [filePointer] [newData]");
+                    return;
+                }
+                try {
+                    int filePointer = Integer.parseInt(commandParts[2]);
+                    String newData = commandParts[3];
+                    client.writeFile(port, fileName, filePointer, newData);
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid file pointer: " + commandParts[2]);
+                }
                 break;
             case "CLOSE":
                 client.closeFile(port, fileName);
