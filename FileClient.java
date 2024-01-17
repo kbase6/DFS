@@ -106,6 +106,18 @@ public class FileClient {
         return null;
     }
 
+    private Integer getServerPort(String path) {
+        String serverName;
+        int firstSlashIndex = path.indexOf("/");
+        if (firstSlashIndex != -1) {
+            serverName = path.substring(0, firstSlashIndex);
+        } else {
+            serverName = path;
+        }
+
+        return serverPortMap.get(serverName);
+    }
+
     public void handleFileTransfer(int port, String fileName, String permission) {
         ConnectionResources resources = connections.get(port);
         if (resources == null) {
@@ -131,6 +143,25 @@ public class FileClient {
             System.out.println("\nFile opened: " + fileName + "\n");
         } catch (IOException e) {
             System.out.println("Error getting response: " + e.getMessage());
+        }
+    }
+
+    public void listDirectory(String fullPath) {
+        int firstSlashIndex = fullPath.indexOf("/");
+        String serverName = (firstSlashIndex != -1) ? fullPath.substring(0, firstSlashIndex) : fullPath;
+        String path = (firstSlashIndex != -1 && fullPath.length() > firstSlashIndex + 1)
+                ? fullPath.substring(firstSlashIndex + 1)
+                : "";
+
+        Integer port = getServerPort(serverName);
+        if (port != null) {
+            sendRequest(port, "LS " + path);
+            String response;
+            while (!(response = getResponse(port)).equals("END_OF_LS")) {
+                System.out.println(response);
+            }
+        } else {
+            System.out.println("Server not found: " + serverName);
         }
     }
 
@@ -242,6 +273,9 @@ public class FileClient {
 
     private static void handleUserInput(String userInput, FileClient client) {
         String[] commandParts = userInput.split(" ", 6);
+        for (int i = 0; i < commandParts.length; i++) {
+            commandParts[i] = commandParts[i].trim();
+        }
 
         if (commandParts.length < 2) {
             System.out.println("Invalid Command");
@@ -260,6 +294,10 @@ public class FileClient {
         }
 
         switch (command.toUpperCase()) {
+            case "LS":
+                String path = commandParts.length > 1 ? commandParts[1] : "";
+                client.listDirectory(path);
+                break;
             case "OPEN":
                 String permission = commandParts.length > 2 ? commandParts[2] : "r";
                 Long startPosition = null;
