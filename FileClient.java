@@ -32,7 +32,6 @@ public class FileClient {
         serverPortMap = new HashMap<>(); // Initialize the server-port map
         this.fileData = new HashMap<>(); // store file data
         this.filePermissions = new HashMap<>(); // store permission for each file
-        System.out.println("Server started on ");
     }
 
     public void connectToServers(String serverListFilePath) {
@@ -135,12 +134,19 @@ public class FileClient {
         }
     }
 
-    public void openFile(int port, String fileName, String permission) {
+    public void openFile(int port, String fileName, String permission, Long startPosition, Long readLength) {
         if (fileName == null) {
             System.out.println("Filename not provided");
             return;
         }
-        sendRequest(port, "OPEN " + fileName + " " + permission);
+        StringBuilder request = new StringBuilder("OPEN ").append(fileName).append(" ").append(permission);
+        if (startPosition != null) {
+            request.append(" ").append(startPosition);
+            if (readLength != null) {
+                request.append(" ").append(readLength);
+            }
+        }
+        sendRequest(port, request.toString());
         handleFileTransfer(port, fileName, permission);
     }
 
@@ -235,7 +241,7 @@ public class FileClient {
     }
 
     private static void handleUserInput(String userInput, FileClient client) {
-        String[] commandParts = userInput.split(" ", 4);
+        String[] commandParts = userInput.split(" ", 6);
 
         if (commandParts.length < 2) {
             System.out.println("Invalid Command");
@@ -256,7 +262,20 @@ public class FileClient {
         switch (command.toUpperCase()) {
             case "OPEN":
                 String permission = commandParts.length > 2 ? commandParts[2] : "r";
-                client.openFile(port, fileName, permission);
+                Long startPosition = null;
+                Long readLength = null;
+                if (commandParts.length > 3) {
+                    try {
+                        startPosition = Long.parseLong(commandParts[3]);
+                        if (commandParts.length > 4) {
+                            readLength = Long.parseLong(commandParts[4]);
+                        }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid start position or read length: " + e.getMessage());
+                        return;
+                    }
+                }
+                client.openFile(port, fileName, permission, startPosition, readLength);
                 break;
             case "READ":
                 client.readFile(port, fileName);
