@@ -104,9 +104,6 @@ class ClientHandler implements Runnable {
             out.println("Error: Insufficient arguments for OPEN command.");
             return;
         }
-        for (int i = 0; i < commands.length; i++) {
-            System.out.println(commands[i]);
-        }
         String fileName = commands[1];
         String permission = commands[2];
 
