@@ -1,5 +1,6 @@
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -76,7 +77,7 @@ class ClientHandler implements Runnable {
             String inputLine;
             System.out.println("Ready to accept commands.");
             while ((inputLine = in.readLine()) != null) {
-                String[] commands = inputLine.split(" ", 3);
+                String[] commands = inputLine.split(" ", 6);
                 String command = commands[0];
 
                 switch (command) {
@@ -99,31 +100,83 @@ class ClientHandler implements Runnable {
     }
 
     private void handleOpen(String[] commands) throws IOException {
+        if (commands.length < 3) {
+            out.println("Error: Insufficient arguments for OPEN command.");
+            return;
+        }
         String fileName = commands[1];
         String permission = commands[2];
 
+        // Check write permissions and try to acquire lock if needed.
         if ("w".equals(permission) || "rw".equals(permission)) {
             if (!lockManager.tryLock(fileName)) {
-                out.println("Write access denied: File is currently open with write permission by other user");
+                out.println("Write access denied: File is currently open with write permission by another user.");
                 return;
             }
         }
-        System.out.println("Request: " + commands[0] + " " + fileName + " " + permission); // Debugging
-        RandomAccessFile file = new RandomAccessFile(fileName, permission);
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        byte[] data = new byte[1024];
-        int bytesRead;
 
-        while ((bytesRead = file.read(data, 0, data.length)) != -1) {
-            buffer.write(data, 0, bytesRead);
+        // Default values for full file reading.
+        long startPosition = 0;
+        long readLength = Long.MAX_VALUE;
+
+        // Check if startPosition and readLength are provided.
+        if (commands.length > 3) {
+            try {
+                startPosition = Long.parseLong(commands[3]);
+                if (commands.length > 4) {
+                    readLength = Long.parseLong(commands[4]);
+                }
+            } catch (NumberFormatException e) {
+                out.println("Error: Invalid start position or read length.");
+                return;
+            }
         }
 
-        buffer.flush();
-        String fileData = buffer.toString();
-        out.println(fileData);
-        out.println("END_OF_DATA");
-        System.out.println("DONE");
-        file.close();
+        try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) { // Open the file in read mode regardless of
+                                                                            // permission for safety.
+            long fileLength = file.length();
+            if (startPosition < 0 || startPosition >= fileLength) {
+                out.println("Error: Start position is out of file bounds.");
+                return;
+            }
+
+            // Adjust readLength if it goes beyond the file's content.
+            if (startPosition + readLength > fileLength) {
+                readLength = fileLength - startPosition;
+            }
+
+            // Move the file pointer to the start position.
+            file.seek(startPosition);
+
+            byte[] buffer = new byte[1024];
+            ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+            long totalBytesRead = 0;
+
+            while (totalBytesRead < readLength) {
+                int bytesToRead = (int) Math.min(buffer.length, readLength - totalBytesRead);
+                int bytesRead = file.read(buffer, 0, bytesToRead);
+                if (bytesRead == -1) {
+                    break; // End of file reached.
+                }
+                outputBuffer.write(buffer, 0, bytesRead);
+                totalBytesRead += bytesRead;
+            }
+
+            // Send the read data to the client.
+            out.println(outputBuffer.toString());
+            out.println("END_OF_DATA");
+            System.out.println("DONE");
+
+        } catch (FileNotFoundException e) {
+            out.println("Error: File not found - " + fileName);
+        } catch (IOException e) {
+            out.println("Error reading file: " + e.getMessage());
+        } finally {
+            // Release the lock if it was acquired
+            if ("w".equals(permission) || "rw".equals(permission)) {
+                lockManager.unlock(fileName);
+            }
+        }
     }
 
     private void handleWrite(String[] commands) throws IOException {
