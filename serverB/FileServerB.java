@@ -1,5 +1,6 @@
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -81,6 +82,9 @@ class ClientHandler implements Runnable {
                 String command = commands[0];
 
                 switch (command) {
+                    case "LS":
+                        handleLs(commands.length > 1 ? commands[1] : ".");
+                        break;
                     case "OPEN":
                         handleOpen(commands);
                         break;
@@ -96,6 +100,25 @@ class ClientHandler implements Runnable {
             e.printStackTrace();
         } finally {
             closeResources();
+        }
+    }
+
+    private void handleLs(String path) {
+        if (path == null || path.isEmpty()) {
+            path = ".";
+        }
+
+        File directory = new File(path);
+        if (directory.exists() && directory.isDirectory()) {
+            String[] files = directory.list();
+            if (files != null) {
+                for (String file : files) {
+                    out.println(file);
+                }
+            }
+            out.println("END_OF_LS");
+        } else {
+            out.println("Error: Directory does not exist - " + path);
         }
     }
 
