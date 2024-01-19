@@ -205,11 +205,11 @@ public class FileClient {
             System.out.println("No new data provided. Nothing to write.");
             return;
         }
-
-        sendRequest(port, "WRITE " + fileName + " " + filePointer);
-        sendRequest(port, newData);
-        sendRequest(port, "END_OF_DATA");
-        System.out.println(getResponse(port));
+        
+        String nowData = fileData.get(fileName);
+        String modifiedData = nowData.substring(0, filePointer) + newData + nowData.substring(filePointer);
+        fileData.put(fileName, modifiedData);
+        System.out.println("Data added to file: " + fileName + " at position " + filePointer);
     }
 
     public void closeFile(int port, String fileName) {
