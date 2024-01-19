@@ -204,7 +204,6 @@ class ClientHandler implements Runnable {
 
     private void handleWrite(String[] commands) throws IOException {
         String fileName = commands[1];
-        int filePointer = Integer.parseInt(commands[2]);
 
         StringBuilder fileContent = new StringBuilder();
         String line;
@@ -218,10 +217,8 @@ class ClientHandler implements Runnable {
 
         RandomAccessFile file = new RandomAccessFile(fileName, "rw");
         try {
-            file.seek(filePointer); // 指定されたポインタに移動
             file.write(newContent.getBytes()); // 新しい内容を書き込み
-            file.setLength(filePointer + newContent.length()); // ファイルの長さを調整
-            out.println("Data written to file: " + fileName + " at position " + filePointer);
+            out.println("Data written to file: " + fileName);
         } catch (IOException e) {
             out.println("Error writing to file: " + e.getMessage());
         } finally {
