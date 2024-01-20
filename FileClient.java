@@ -124,7 +124,7 @@ public class FileClient {
             System.out.println("No connection resources found for port " + port);
             return;
         }
-    
+
         try {
             StringBuilder message = new StringBuilder();
             String line;
@@ -145,24 +145,24 @@ public class FileClient {
     private void handleFileUpdate(String message) {
         String[] lines = message.split("\n");
         String header = lines[0];
-    
+
         if (!header.startsWith("FILE_UPDATE:")) { // Include colon if it's part of the message
             System.out.println("\nInvalid message format");
             return;
         }
-    
+
         String fileName = header.substring("FILE_UPDATE:".length()).trim();
-    
+
         StringBuilder fileContent = new StringBuilder();
         for (int i = 1; i < lines.length - 1; i++) {
             fileContent.append(lines[i]).append("\n");
         }
 
         fileData.put(fileName, fileContent.toString().trim());
-    
+
         System.out.println("File " + fileName + " has been updated.");
-    }    
-    
+    }
+
     public void handleFileTransfer(int port, String fileName, String permission) {
         ConnectionResources resources = connections.get(port);
         if (resources == null) {
@@ -261,7 +261,7 @@ public class FileClient {
             System.out.println("No new data provided. Nothing to write.");
             return;
         }
-        
+
         String nowData = fileData.get(fileName);
         String modifiedData = nowData.substring(0, filePointer) + newData + nowData.substring(filePointer);
         fileData.put(fileName, modifiedData);
@@ -327,6 +327,24 @@ public class FileClient {
         }
     }
 
+    public void createFile(int port, String fileName) {
+        sendRequest(port, "CREATE_FILE " + fileName);
+        String response = getResponse(port);
+        System.out.println("\n" + response + "\n");
+    }
+
+    public void createDirectory(int port, String dirName) {
+        sendRequest(port, "CREATE_DIR " + dirName);
+        String response = getResponse(port);
+        System.out.println("\n" + response + "\n");
+    }
+
+    public void deleteFile(int port, String name) {
+        sendRequest(port, "DELETE " + name);
+        String response = getResponse(port);
+        System.out.println("\n" + response + "\n");
+    }
+
     private static void handleUserInput(String userInput, FileClient client) {
         String[] commandParts = userInput.split(" ", 6);
         for (int i = 0; i < commandParts.length; i++) {
@@ -389,6 +407,15 @@ public class FileClient {
                 break;
             case "CLOSE":
                 client.closeFile(port, fileName);
+                break;
+            case "CREATE_FILE":
+                client.createFile(port, fileName);
+                break;
+            case "CREATE_DIR":
+                client.createDirectory(port, fileName);
+                break;
+            case "DELETE":
+                client.deleteFile(port, fileName);
                 break;
             default:
                 System.out.println("Invalid Command");

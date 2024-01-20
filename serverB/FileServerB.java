@@ -96,6 +96,15 @@ class ClientHandler implements Runnable {
                     case "WRITE":
                         handleWrite(commands);
                         break;
+                    case "CREATE_FILE":
+                        handleCreateFILE(commands);
+                        break;
+                    case "CREATE_DIR":
+                        handleCreateDirectory(commands);
+                        break;
+                    case "DELETE":
+                        handleDelete(commands);
+                        break;
                     default:
                         out.println("Invalid command");
                         break;
@@ -105,6 +114,72 @@ class ClientHandler implements Runnable {
             e.printStackTrace();
         } finally {
             closeResources();
+        }
+    }
+
+    private void handleDelete(String[] commands) throws IOException {
+        if (commands.length < 2) {
+            out.println("Error: No file or directory name specified");
+            return;
+        }
+
+        String name = commands[1];
+        File fileOrDirectory = new File(name);
+
+        if (!fileOrDirectory.exists()) {
+            out.println("Error: File or directory does not exist - " + name);
+            return;
+        }
+
+        boolean deleted = fileOrDirectory.delete();
+        if (deleted) {
+            out.println("File or directory deleted successfully: " + name);
+        } else {
+            out.println("Error: Could not delete the file or directory - " + name);
+        }
+    }
+
+    private void handleCreateDirectory(String[] commands) throws IOException {
+        if (commands.length < 2) {
+            out.println("Error: No directory name specified");
+            return;
+        }
+
+        String dirName = commands[1];
+        File directory = new File(dirName);
+
+        if (directory.exists()) {
+            out.println("Error: Directory already exists - " + dirName);
+            return;
+        }
+
+        boolean created = directory.mkdir();
+        if (created) {
+            out.println("Directory created successfully: " + dirName);
+        } else {
+            out.println("Error: Could not create the directory - " + dirName);
+        }
+    }
+
+    private void handleCreateFILE(String[] commands) throws IOException {
+        if (commands.length < 2) {
+            out.println("Error: No file name specified");
+            return;
+        }
+
+        String fileName = commands[1];
+        File file = new File(fileName);
+
+        if (file.exists()) {
+            out.println("Error: File already exists - " + fileName);
+            return;
+        }
+
+        boolean created = file.createNewFile();
+        if (created) {
+            out.println("File created successfully: " + fileName);
+        } else {
+            out.println("Error: Could not create the file - " + fileName);
         }
     }
 
@@ -164,8 +239,13 @@ class ClientHandler implements Runnable {
         }
 
         try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) { // Open the file in read mode regardless of
-                                                                                 // permission for safety.
+                                                                            // permission for safety.
             long fileLength = file.length();
+            if (fileLength == 0) {
+                out.println("END_OF_DATA");
+                return;
+            }
+
             if (startPosition < 0 || startPosition >= fileLength) {
                 out.println("Error: Start position is out of file bounds.");
                 return;
