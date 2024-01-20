@@ -118,6 +118,51 @@ public class FileClient {
         return serverPortMap.get(serverName);
     }
 
+    private void listenForUpdates(int port) {
+        ConnectionResources resources = connections.get(port);
+        if (resources == null) {
+            System.out.println("No connection resources found for port " + port);
+            return;
+        }
+    
+        try {
+            StringBuilder message = new StringBuilder();
+            String line;
+            while ((line = resources.in.readLine()) != null) {
+                message.append(line).append("\n");
+                if (line.equals("END_OF_DATA")) {
+                    if (message.toString().startsWith("FILE_UPDATE")) {
+                        handleFileUpdate(message.toString());
+                        message = new StringBuilder(); // Reset message for the next update
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Error listening for updates: " + e.getMessage());
+        }
+    }
+
+    private void handleFileUpdate(String message) {
+        String[] lines = message.split("\n");
+        String header = lines[0];
+    
+        if (!header.startsWith("FILE_UPDATE:")) { // Include colon if it's part of the message
+            System.out.println("\nInvalid message format");
+            return;
+        }
+    
+        String fileName = header.substring("FILE_UPDATE:".length()).trim();
+    
+        StringBuilder fileContent = new StringBuilder();
+        for (int i = 1; i < lines.length - 1; i++) {
+            fileContent.append(lines[i]).append("\n");
+        }
+
+        fileData.put(fileName, fileContent.toString().trim());
+    
+        System.out.println("File " + fileName + " has been updated.");
+    }    
+    
     public void handleFileTransfer(int port, String fileName, String permission) {
         ConnectionResources resources = connections.get(port);
         if (resources == null) {
@@ -170,6 +215,7 @@ public class FileClient {
             System.out.println("Filename not provided");
             return;
         }
+
         StringBuilder request = new StringBuilder("OPEN ").append(fileName).append(" ").append(permission);
         if (startPosition != null) {
             request.append(" ").append(startPosition);
@@ -179,6 +225,16 @@ public class FileClient {
         }
         sendRequest(port, request.toString());
         handleFileTransfer(port, fileName, permission);
+
+        if ("r".equals(permission)) {
+            System.out.println("Listening for updates");
+            startListenForUpdates(port);
+        }
+    }
+
+    private void startListenForUpdates(int port) {
+        Thread updateListenerThread = new Thread(() -> listenForUpdates(port));
+        updateListenerThread.start();
     }
 
     public void readFile(int port, String fileName) {
