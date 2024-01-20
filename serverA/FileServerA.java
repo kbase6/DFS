@@ -8,6 +8,11 @@ import java.io.PrintWriter;
 import java.io.RandomAccessFile;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -137,6 +142,9 @@ class ClientHandler implements Runnable {
                 return;
             }
         }
+        if ("r".equals(permission)) {
+            lockManager.addReadClient(fileName, this);
+        }
 
         // Default values for full file reading.
         long startPosition = 0;
@@ -156,7 +164,7 @@ class ClientHandler implements Runnable {
         }
 
         try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) { // Open the file in read mode regardless of
-                                                                            // permission for safety.
+                                                                                 // permission for safety.
             long fileLength = file.length();
             if (startPosition < 0 || startPosition >= fileLength) {
                 out.println("Error: Start position is out of file bounds.");
@@ -194,11 +202,6 @@ class ClientHandler implements Runnable {
             out.println("Error: File not found - " + fileName);
         } catch (IOException e) {
             out.println("Error reading file: " + e.getMessage());
-        } finally {
-            // Release the lock if it was acquired
-            if ("w".equals(permission) || "rw".equals(permission)) {
-                lockManager.unlock(fileName);
-            }
         }
     }
 
@@ -223,6 +226,20 @@ class ClientHandler implements Runnable {
             out.println("Error writing to file: " + e.getMessage());
         } finally {
             file.close();
+            lockManager.unlock(fileName);
+            lockManager.notifyReadClients(fileName);
+        }
+    }
+
+    public void sendFileUpdate(String fileName) {
+        out.println("FILE_UPDATE:" + fileName);
+        try {
+            String fileContent = Files.readString(Paths.get(fileName));
+            System.out.println(fileContent);
+            out.println(fileContent);
+            out.println("END_OF_DATA");
+        } catch (IOException e) {
+            out.println("Error reading file: " + e.getMessage());
         }
     }
 
@@ -242,6 +259,7 @@ class ClientHandler implements Runnable {
 
 class LockManager {
     private Set<String> lockedFiles = ConcurrentHashMap.newKeySet();
+    private Map<String, List<ClientHandler>> readClients = new ConcurrentHashMap<>();
 
     public synchronized boolean tryLock(String fileName) {
         return lockedFiles.add(fileName);
@@ -249,5 +267,28 @@ class LockManager {
 
     public synchronized void unlock(String fileName) {
         lockedFiles.remove(fileName);
+        notifyReadClients(fileName);
+    }
+
+    public synchronized void addReadClient(String fileName, ClientHandler client) {
+        readClients.computeIfAbsent(fileName, k -> new ArrayList<>()).add(client);
+        System.out.println("Added read client for " + fileName);
+    }
+
+    public synchronized void removeReadClient(String fileName, ClientHandler client) {
+        if (readClients.containsKey(fileName)) {
+            readClients.get(fileName).remove(client);
+        }
+    }
+
+    public void notifyReadClients(String fileName) {
+        if (readClients.containsKey(fileName)) {
+            System.out.println("Notifying read clients for " + fileName);
+            for (ClientHandler client : readClients.get(fileName)) {
+                System.out.println("Client found");
+                client.sendFileUpdate(fileName);
+                removeReadClient(fileName, client);
+            }
+        }
     }
 }
