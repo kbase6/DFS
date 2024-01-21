@@ -262,9 +262,30 @@ public class FileClient {
             return;
         }
 
-        String nowData = fileData.get(fileName);
-        String modifiedData = nowData.substring(0, filePointer) + newData + nowData.substring(filePointer);
-        fileData.put(fileName, modifiedData);
+        String nowData = fileData.getOrDefault(fileName, "");
+        StringBuilder modifiedData = new StringBuilder();
+
+        // 現在のデータの長さがfilePointerより短い場合、その長さまでをnowDataとして扱う
+        if (nowData.length() < filePointer) {
+            modifiedData.append(nowData);
+            // 空白で埋める
+            for (int i = nowData.length(); i < filePointer; i++) {
+                modifiedData.append(" ");
+            }
+        } else {
+            // filePointerまでのnowDataを結合
+            modifiedData.append(nowData.substring(0, filePointer));
+        }
+
+        // 新しいデータを追加
+        modifiedData.append(newData);
+
+        // filePointer以降のnowDataを結合（もし存在する場合）
+        if (nowData.length() > filePointer + newData.length()) {
+            modifiedData.append(nowData.substring(filePointer + newData.length()));
+        }
+
+        fileData.put(fileName, modifiedData.toString());
         System.out.println("Data added to file: " + fileName + " at position " + filePointer);
     }
 
