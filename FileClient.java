@@ -287,22 +287,18 @@ public class FileClient {
         String nowData = fileData.getOrDefault(fileName, "");
         StringBuilder modifiedData = new StringBuilder();
 
-        // 現在のデータの長さがfilePointerより短い場合、その長さまでをnowDataとして扱う
         if (nowData.length() < filePointer) {
             modifiedData.append(nowData);
-            // 空白で埋める
             for (int i = nowData.length(); i < filePointer; i++) {
                 modifiedData.append(" ");
             }
         } else {
-            // filePointerまでのnowDataを結合
             modifiedData.append(nowData.substring(0, filePointer));
         }
 
-        // 新しいデータを追加
+        newData = newData.replace("\\n", "\n");
         modifiedData.append(newData);
 
-        // filePointer以降のnowDataを結合（もし存在する場合）
         if (nowData.length() > filePointer + newData.length()) {
             modifiedData.append(nowData.substring(filePointer + newData.length()));
         }
@@ -324,7 +320,7 @@ public class FileClient {
             sendRequest(port, content);
             sendRequest(port, "END_OF_DATA");
             System.out.println(getResponse(port));
-        } 
+        }
         if ("r".equals(permission)) {
             Thread threadToStop = threadMap.get(fileName);
             if (threadToStop != null) {
@@ -386,7 +382,6 @@ public class FileClient {
         sendRequest(port, "CREATE_FILE " + fileName);
         System.out.println(getResponse(port));
     }
-    
 
     public void createDirectory(int port, String dirName) {
         if (dirName == null || dirName.isEmpty()) {
@@ -396,7 +391,6 @@ public class FileClient {
         sendRequest(port, "CREATE_DIR " + dirName);
         System.out.println(getResponse(port));
     }
-    
 
     public void deleteFile(int port, String name) {
         if (name == null || name.isEmpty()) {
@@ -408,64 +402,67 @@ public class FileClient {
     }
 
     private static void handleUserInput(String userInput, FileClient client) {
-        String[] commandParts = userInput.split(" ", 6);
-        for (int i = 0; i < commandParts.length; i++) {
-            commandParts[i] = commandParts[i].trim();
-        }
-
-        if (commandParts.length < 2) {
+        String[] initialParts = userInput.split(" ", 3);
+        if (initialParts.length < 2) {
             System.out.println("Invalid Command");
             return;
         }
 
-        String command = commandParts[0].toUpperCase();
-        String[] parsedFilePath = parseFilePath(commandParts[1]);
-        String serverName = parsedFilePath[0];
-        String fileName = parsedFilePath[1];
+        String command = initialParts[0].toUpperCase();
+        String[] filePathParts = parseFilePath(initialParts[1]);
+        String serverName = filePathParts[0];
+        String fileName = filePathParts[1];
 
         Integer port = client.serverPortMap.get(serverName);
         if (port == null) {
-            System.out.println("Either server is not found or the filepath is invalid: " + serverName);
+            System.out.println("Server not found: " + serverName);
             return;
         }
 
-        switch (command.toUpperCase()) {
-            case "LS":
-                String path = commandParts.length > 1 ? commandParts[1] : "";
-                client.listDirectory(path);
+        switch (command) {
+            case "WRITE":
+                if (initialParts.length < 3) {
+                    System.out.println("Invalid Command. Usage: WRITE [serverName/filename] [filePointer] [newData]");
+                    return;
+                }
+                String[] writeParts = initialParts[2].split(" ", 2);
+                if (writeParts.length < 2) {
+                    System.out.println("Invalid Command. Usage: WRITE [serverName/filename] [filePointer] [newData]");
+                    return;
+                }
+                try {
+                    int filePointer = Integer.parseInt(writeParts[0]);
+                    String newData = writeParts[1];
+                    client.writeFile(port, fileName, filePointer, newData);
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid file pointer: " + writeParts[0]);
+                }
                 break;
             case "OPEN":
-                String permission = commandParts.length > 2 ? commandParts[2] : "r";
+                if (initialParts.length < 3) {
+                    client.openFile(port, fileName, "r", null, null); // Default to read mode with full file
+                    break;
+                }
+                String[] openParts = initialParts[2].split(" ", 2);
+                String permission = openParts[0];
                 Long startPosition = null;
                 Long readLength = null;
-                if (commandParts.length > 3) {
+                if (openParts.length > 1) {
+                    String[] rangeParts = openParts[1].split(" ");
                     try {
-                        startPosition = Long.parseLong(commandParts[3]);
-                        if (commandParts.length > 4) {
-                            readLength = Long.parseLong(commandParts[4]);
+                        startPosition = Long.parseLong(rangeParts[0]);
+                        if (rangeParts.length > 1) {
+                            readLength = Long.parseLong(rangeParts[1]);
                         }
                     } catch (NumberFormatException e) {
                         System.out.println("Invalid start position or read length: " + e.getMessage());
-                        return;
+                        break;
                     }
                 }
                 client.openFile(port, fileName, permission, startPosition, readLength);
                 break;
             case "READ":
                 client.readFile(port, fileName);
-                break;
-            case "WRITE":
-                if (commandParts.length < 4) {
-                    System.out.println("Invalid Command. Usage: WRITE [serverName/filename] [filePointer] [newData]");
-                    return;
-                }
-                try {
-                    int filePointer = Integer.parseInt(commandParts[2]);
-                    String newData = commandParts[3];
-                    client.writeFile(port, fileName, filePointer, newData);
-                } catch (NumberFormatException e) {
-                    System.out.println("Invalid file pointer: " + commandParts[2]);
-                }
                 break;
             case "CLOSE":
                 client.closeFile(port, fileName);
@@ -479,9 +476,14 @@ public class FileClient {
             case "DELETE":
                 client.deleteFile(port, fileName);
                 break;
+            case "LS":
+                String path = initialParts.length > 1 ? initialParts[1] : "";
+                client.listDirectory(path);
+                break;
             default:
                 System.out.println("Invalid Command");
                 break;
         }
     }
+
 }
