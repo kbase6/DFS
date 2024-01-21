@@ -8,12 +8,14 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FileClient {
-    private Map<String, String> fileData;
-    private Map<String, String> filePermissions;
-    private Map<Integer, ConnectionResources> connections;
-    private Map<String, Integer> serverPortMap;
+    private final Map<String, String> fileData;
+    private final Map<String, String> filePermissions;
+    private final Map<Integer, ConnectionResources> connections;
+    private final Map<String, Integer> serverPortMap;
+    private final ConcurrentHashMap<String, Thread> threadMap = new ConcurrentHashMap<>();
 
     private class ConnectionResources {
         Socket socket;
@@ -103,7 +105,7 @@ public class FileClient {
         } else {
             System.out.println("No active connection on port " + port);
         }
-        return null;
+        return "Error: either resource is null or socket is not connected";
     }
 
     private Integer getServerPort(String path) {
@@ -124,21 +126,36 @@ public class FileClient {
             System.out.println("No connection resources found for port " + port);
             return;
         }
-
         try {
             StringBuilder message = new StringBuilder();
             String line;
-            while ((line = resources.in.readLine()) != null) {
-                message.append(line).append("\n");
-                if (line.equals("END_OF_DATA")) {
-                    if (message.toString().startsWith("FILE_UPDATE")) {
-                        handleFileUpdate(message.toString());
-                        message = new StringBuilder(); // Reset message for the next update
+            while (!Thread.currentThread().isInterrupted()) {
+                if (resources.in.ready()) {
+                    while ((line = resources.in.readLine()) != null) {
+                        message.append(line).append("\n");
+                        if (line.equals("END_OF_DATA")) {
+                            if (message.toString().startsWith("FILE_UPDATE")) {
+                                handleFileUpdate(message.toString());
+                                message = new StringBuilder(); // Reset message for the next update
+                            }
+                        }
+                    }
+                } else {
+                    // If there's nothing to read, sleep a bit
+                    try {
+                        Thread.sleep(100); // Adjust the sleep time as necessary
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt(); // Preserve interruption status
+                        break;
                     }
                 }
             }
         } catch (IOException e) {
-            System.out.println("Error listening for updates: " + e.getMessage());
+            if (!Thread.currentThread().isInterrupted()) {
+                System.out.println("Error listening for updates: " + e.getMessage());
+            } else {
+                System.out.println("Interrupted during I/O operation.");
+            }
         }
     }
 
@@ -160,7 +177,8 @@ public class FileClient {
 
         fileData.put(fileName, fileContent.toString().trim());
 
-        System.out.println("File " + fileName + " has been updated.");
+        System.out.println("\n File " + fileName + " has been updated.");
+        System.out.print("cmd > ");
     }
 
     public void handleFileTransfer(int port, String fileName, String permission) {
@@ -178,16 +196,24 @@ public class FileClient {
                     break; // Break the loop when the end-of-data marker is found
                 }
                 if (line.startsWith("Write access denied")) {
-                    System.out.println("\n" + line + "\n");
+                    System.out.println(line);
+                    return;
+                } else if (line.startsWith("Error:")) {
+                    System.out.println(line);
                     return;
                 }
                 response.append(line).append("\n");
             }
             fileData.put(fileName, response.toString().trim());
             filePermissions.put(fileName, permission);
-            System.out.println("\nFile opened: " + fileName + "\n");
+            System.out.println("File opened: " + fileName);
         } catch (IOException e) {
             System.out.println("Error getting response: " + e.getMessage());
+        }
+
+        if ("r".equals(permission)) {
+            System.out.println("Listening for updates");
+            startListenForUpdates(fileName, port);
         }
     }
 
@@ -225,16 +251,12 @@ public class FileClient {
         }
         sendRequest(port, request.toString());
         handleFileTransfer(port, fileName, permission);
-
-        if ("r".equals(permission)) {
-            System.out.println("Listening for updates");
-            startListenForUpdates(port);
-        }
     }
 
-    private void startListenForUpdates(int port) {
+    private void startListenForUpdates(String fileName, int port) {
         Thread updateListenerThread = new Thread(() -> listenForUpdates(port));
         updateListenerThread.start();
+        threadMap.put(fileName, updateListenerThread);
     }
 
     public void readFile(int port, String fileName) {
@@ -296,11 +318,19 @@ public class FileClient {
         }
         String permission = filePermissions.get(fileName);
         if ("w".equals(permission) || "rw".equals(permission)) {
+            System.out.println("close file");
             String content = fileData.get(fileName);
             sendRequest(port, "WRITE " + fileName);
             sendRequest(port, content);
             sendRequest(port, "END_OF_DATA");
             System.out.println(getResponse(port));
+        } 
+        if ("r".equals(permission)) {
+            Thread threadToStop = threadMap.get(fileName);
+            if (threadToStop != null) {
+                threadToStop.interrupt();
+                threadMap.remove(fileName);
+            }
         }
         fileData.remove(fileName);
         filePermissions.remove(fileName);
@@ -349,21 +379,32 @@ public class FileClient {
     }
 
     public void createFile(int port, String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            System.out.println("Filename not provided or empty.");
+            return;
+        }
         sendRequest(port, "CREATE_FILE " + fileName);
-        String response = getResponse(port);
-        System.out.println("\n" + response + "\n");
+        System.out.println(getResponse(port));
     }
+    
 
     public void createDirectory(int port, String dirName) {
+        if (dirName == null || dirName.isEmpty()) {
+            System.out.println("Directory name not provided or empty.");
+            return;
+        }
         sendRequest(port, "CREATE_DIR " + dirName);
-        String response = getResponse(port);
-        System.out.println("\n" + response + "\n");
+        System.out.println(getResponse(port));
     }
+    
 
     public void deleteFile(int port, String name) {
+        if (name == null || name.isEmpty()) {
+            System.out.println("File name not provided or empty.");
+            return;
+        }
         sendRequest(port, "DELETE " + name);
-        String response = getResponse(port);
-        System.out.println("\n" + response + "\n");
+        System.out.println(getResponse(port));
     }
 
     private static void handleUserInput(String userInput, FileClient client) {
@@ -384,7 +425,7 @@ public class FileClient {
 
         Integer port = client.serverPortMap.get(serverName);
         if (port == null) {
-            System.out.println("Server not found: " + serverName);
+            System.out.println("Either server is not found or the filepath is invalid: " + serverName);
             return;
         }
 
