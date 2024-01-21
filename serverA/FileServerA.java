@@ -19,9 +19,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FileServerA implements AutoCloseable {
-    private ServerSocket serverSocket;
-    private ExecutorService executorService;
-    private LockManager lockManager;
+    private final ServerSocket serverSocket;
+    private final ExecutorService executorService;
+    private final LockManager lockManager;
 
     public FileServerA(int port) throws IOException {
         serverSocket = new ServerSocket(port);
@@ -64,7 +64,7 @@ public class FileServerA implements AutoCloseable {
 }
 
 class ClientHandler implements Runnable {
-    private Socket clientSocket;
+    private final Socket clientSocket;
     private PrintWriter out;
     private BufferedReader in;
     private LockManager lockManager;
@@ -217,9 +217,6 @@ class ClientHandler implements Runnable {
                 return;
             }
         }
-        if ("r".equals(permission)) {
-            lockManager.addReadClient(fileName, this);
-        }
 
         // Default values for full file reading.
         long startPosition = 0;
@@ -238,8 +235,7 @@ class ClientHandler implements Runnable {
             }
         }
 
-        try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) { // Open the file in read mode regardless of
-                                                                            // permission for safety.
+        try (RandomAccessFile file = new RandomAccessFile(fileName, "r")) {
             long fileLength = file.length();
             if (fileLength == 0) {
                 out.println("END_OF_DATA");
@@ -278,13 +274,18 @@ class ClientHandler implements Runnable {
             out.println("END_OF_DATA");
             System.out.println("DONE");
 
+            // Add client to list
+            if ("r".equals(permission)) {
+                lockManager.addReadClient(fileName, this);
+            }
         } catch (FileNotFoundException e) {
-            out.println("Error: File not found - " + fileName);
+            out.println("Error: File " + fileName + " not found.");
         } catch (IOException e) {
             out.println("Error reading file: " + e.getMessage());
         }
     }
 
+    // handle write request
     private void handleWrite(String[] commands) throws IOException {
         String fileName = commands[1];
 
@@ -300,7 +301,7 @@ class ClientHandler implements Runnable {
 
         RandomAccessFile file = new RandomAccessFile(fileName, "rw");
         try {
-            file.write(newContent.getBytes()); // 新しい内容を書き込み
+            file.write(newContent.getBytes()); // overwrite file to new content
             out.println("Data written to file: " + fileName);
         } catch (IOException e) {
             out.println("Error writing to file: " + e.getMessage());
@@ -315,7 +316,6 @@ class ClientHandler implements Runnable {
         out.println("FILE_UPDATE:" + fileName);
         try {
             String fileContent = Files.readString(Paths.get(fileName));
-            System.out.println(fileContent);
             out.println(fileContent);
             out.println("END_OF_DATA");
         } catch (IOException e) {
@@ -365,7 +365,6 @@ class LockManager {
         if (readClients.containsKey(fileName)) {
             System.out.println("Notifying read clients for " + fileName);
             for (ClientHandler client : readClients.get(fileName)) {
-                System.out.println("Client found");
                 client.sendFileUpdate(fileName);
                 removeReadClient(fileName, client);
             }
